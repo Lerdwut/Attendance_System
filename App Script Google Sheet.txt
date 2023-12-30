@@ -1,0 +1,190 @@
+function doGet(e) {
+  Logger.log(JSON.stringify(e));
+  var result = 'Ok';
+
+  if (e.parameter == 'undefined') {
+    result = 'No Parameters';
+  } else {
+    var sheet_id = '1Alyy7n-RNf7emKxl0KxL4ZnAqZUq9l3cOS2OymUSfjE'; // Spreadsheet ID
+    var sheet = SpreadsheetApp.openById(sheet_id).getActiveSheet();
+    var newRow = sheet.getLastRow() + 1;
+    var rowData = [];
+    var Curr_Date = new Date();
+    rowData[0] = Curr_Date; // Date in column A
+    var Curr_Time = Utilities.formatDate(Curr_Date, "Asia/Bangkok",'HH:mm:ss');
+    rowData[1] = Curr_Time; // Time in column B
+
+    for (var param in e.parameter) {
+      Logger.log('In for loop, param=' + param);
+      var value = stripQuotes(e.parameter[param]);
+      Logger.log(param + ':' + e.parameter[param]);
+      
+      switch (param) {
+        case 'id':
+          rowData[2] = value;
+          result = 'OK';
+          break;
+        default:
+          result = "unsupported parameter";
+      }
+    }
+
+    Logger.log(JSON.stringify(rowData));
+    var newRange = sheet.getRange(newRow, 1, 1, rowData.length);
+    newRange.setValues([rowData]);
+  }
+
+  return ContentService.createTextOutput(result);
+}
+
+function stripQuotes(value) {
+  return value.replace(/^["']|['"]$/g, "");
+}
+
+function sendToLineNotify() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("B");
+  const token = sheet.getRange(2, 3).getValue();
+  const content = sheet.getRange(3, 3).getValue();
+  const content2 = sheet.getRange(4, 3).getValue();
+  const content3 = sheet.getRange(5, 3).getValue();
+
+  if (!content || !token) {
+    Logger.log("Access Token หรือข้อความว่างเปล่า");
+    return;
+  }
+
+  const message = "\n" + "ใบรายชื่อของวันที่ : " + content2 + "\n" + content + "\n" + "ลิ้งแดชบอร์ด :" + content3 + "\n" + "Thank you very much for using🙏"; // เพิ่มเครื่องหมาย + เพื่อรวมข้อความ
+
+  const options = {
+    "method": "post",
+    "payload": {
+      "message": message
+    },
+    "headers": {
+      "Authorization": "Bearer " + token,
+    },
+  };
+
+  const response = UrlFetchApp.fetch("https://notify-api.line.me/api/notify", options);
+
+  if (response.getResponseCode() === 200) {
+    Logger.log("ส่งข้อมูลไปยัง LINE Notify เรียบร้อยแล้ว");
+  } else {
+    Logger.log("มีปัญหาในการส่งข้อมูลไปยัง LINE Notify");
+  }
+}
+
+function exportToPDFAndSendToSheets() {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var sourceSheet = spreadsheet.getSheetByName('A');
+  var targetSheet2 = spreadsheet.getSheetByName('B');
+
+  var blob = spreadsheet.getBlob();
+
+  var pdfFile = DriveApp.createFile(blob).setName('ข้อมูลวันนี้.pdf');
+  var pdfUrl = pdfFile.getUrl();
+
+  pdfFile.setTrashed(true);
+
+  targetSheet2.getRange(10, 3).setValue(pdfUrl);
+}
+
+function deleteData() {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = spreadsheet.getSheetByName('A'); // แทน 'ชื่อแผ่นข้อมูล' ด้วยชื่อแผ่นข้อมูลที่คุณต้องการลบข้อมูล
+  var lastRow = sheet.getLastRow();
+
+  // ลบข้อมูลในคอลัมน์ A, B, และ C ในทุกแถวที่มีข้อมูล
+  sheet.getRange('A2:C' + lastRow).clearContent();
+}
+
+function changeBackgroundColor() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var range = sheet.getDataRange();
+  var values = range.getValues();
+
+  for (var i = 0; i < values.length; i++) {
+    var cellValue = values[i][0]; // สมมติว่าข้อมูลวันอยู่ในคอลัมน์ A
+    var cellColor = ''; // สีเริ่มต้นว่าง
+
+    if (cellValue instanceof Date) {
+      var dayOfWeek = cellValue.getDay();
+      
+      switch (dayOfWeek) {
+        case 0: // วันอาทิตย์
+          cellColor = '#FADCDC'; // สี Cosmos
+          break;
+        case 1: // วันจันทร์
+          cellColor = '#FDFFE4'; // สี China Ivory
+          break;
+        case 2: // วันอังคาร
+          cellColor = '#F8D5F8'; // สี Pink Lace
+          break;
+        case 3: // วันพุธ
+          cellColor = '#D0F4DE'; // สี Granny Apple
+          break;
+        case 4: // วันพฤหัสบดี
+          cellColor = '#FFE2D1'; // สี Watusi
+          break;
+        case 5: // วันศุกร์
+          cellColor = '#E5F9FE'; // สี Oyster Bay
+          break;
+        case 6: // วันเสาร์
+          cellColor = '#D4D2F2'; // สี Moon Laker
+          break;
+      }
+    }
+
+    // ตั้งค่าสีพื้นหลังของแต่ละคอลัมน์ A ถึง F
+    for (var col = 0; col < 6; col++) {
+      range.getCell(i + 1, col + 1).setBackground(cellColor); // i+1 เป็นเลขแถว, col+1 เป็นเลขคอลัมน์
+    }
+  }
+}
+
+function onEdit(e) {
+  var sheet = e.source.getActiveSheet();
+  var range = e.range;
+  var column = range.getColumn();
+  var row = range.getRow();
+
+  // ตรวจสอบว่าการแก้ไขเกิดขึ้นในคอลัมน์ A ถึง F
+  if (column >= 1 && column <= 6) {
+    var cellValue = sheet.getRange(row, 1).getValue();
+    var cellColor = '';
+
+    if (cellValue instanceof Date) {
+      var dayOfWeek = cellValue.getDay();
+
+      switch (dayOfWeek) {
+        case 0: // วันอาทิตย์
+          cellColor = '#FADCDC'; // สี Cosmos
+          break;
+        case 1: // วันจันทร์
+          cellColor = '#FDFFE4'; // สี China Ivory
+          break;
+        case 2: // วันอังคาร
+          cellColor = '#F8D5F8'; // สี Pink Lace
+          break;
+        case 3: // วันพุธ
+          cellColor = '#D0F4DE'; // สี Granny Apple
+          break;
+        case 4: // วันพฤหัสบดี
+          cellColor = '#FFE2D1'; // สี Watusi
+          break;
+        case 5: // วันศุกร์
+          cellColor = '#E5F9FE'; // สี Oyster Bay
+          break;
+        case 6: // วันเสาร์
+          cellColor = '#D4D2F2'; // สี Moon Laker
+          break;
+      }
+    }
+
+    // ตั้งค่าสีพื้นหลังของแต่ละคอลัม์ A ถึง F
+    for (var col = 1; col <= 6; col++) {
+      sheet.getRange(row, col).setBackground(cellColor);
+    }
+  }
+}
